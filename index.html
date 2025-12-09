@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulated Annealing Grid Demo</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+        .grid-container { display: grid; grid-template-columns: repeat(10, 50px); gap: 2px; margin-top: 20px; }
+        .cell {
+            width: 50px; height: 50px;
+            display: flex; align-items: center; justify-content: center;
+            border: 1px solid #ddd; font-size: 12px;
+        }
+        .agent { background-color: #ff5722; color: white; font-weight: bold; border: 2px solid #333; }
+        .controls { margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <h1>Grid Üzerinde Simulated Annealing</h1>
+    <div class="controls">
+        <p>Sıcaklık (T): <span id="tempDisplay">100</span> | Skor: <span id="scoreDisplay">0</span></p>
+        <button onclick="startSimulation()">Simülasyonu Başlat</button>
+    </div>
+
+    <div id="grid" class="grid-container"></div>
+
+<script>
+    // --- 1. SENİN DOSYANDAKİ ALGORİTMA  ---
+    const Algorithm = {
+        simulatedAnnealing: function(state, stateSpace, inputTemp) {
+            let s = state;
+            const successors = stateSpace.getSuccessors(state); // Komşuları al
+            const temp = inputTemp < 0 ? 0 : inputTemp;
+
+            // Hocanın mantığına ve projedeki koda göre:
+            // Tüm komşuları değerlendiriyoruz
+            for (let i = 0; i < successors.length; i++) {
+                const t = successors[i];
+                
+                // Eğer komşunun skoru daha yüksekse (Tepe tırmanma)
+                if (t.score > s.score) {
+                    s = t; // Daha iyi durumu kabul et
+                } else {
+                    // Daha kötü durumu belirli bir olasılıkla kabul et
+                    const loss = Math.abs(s.score - t.score);
+                    const probability = Math.exp(-(loss / temp));
+                    
+                    if (Math.random() <= probability) {
+                        s = t; // Kötü durumu kabul et
+                    }
+                }
+            }
+            return s;
+        }
+    };
+
+    // --- 2. GRID VE STATE YAPISI  ---
+    
+    class GridWorld {
+        constructor(size) {
+            this.size = size;
+            this.grid = [];
+            // Grid'i rastgele skorlarla doldur (Tepe oluşturmak için ortaya yüksek değerler verelim)
+            for (let y = 0; y < size; y++) {
+                let row = [];
+                for (let x = 0; x < size; x++) {
+                    // Basit bir tepe fonksiyonu: Merkeze yaklaştıkça skor artar
+                    const dist = Math.sqrt((x - size/2)**2 + (y - size/2)**2);
+                    const score = Math.floor(100 - (dist * 10) + (Math.random() * 10)); 
+                    row.push({ x, y, score });
+                }
+                this.grid.push(row);
+            }
+        }
+
+        // Bir koordinattaki durumu ve skorunu getir
+        getState(x, y) {
+            if (x >= 0 && x < this.size && y >= 0 && y < this.size) {
+                return this.grid[y][x];
+            }
+            return null;
+        }
+
+        // Mevcut durumun komşularını bul (Yukarı, Aşağı, Sağ, Sol)
+        getSuccessors(state) {
+            const neighbors = [];
+            const { x, y } = state;
+            
+            const directions = [
+                { dx: 0, dy: -1 }, // Yukarı
+                { dx: 0, dy: 1 },  // Aşağı
+                { dx: -1, dy: 0 }, // Sol
+                { dx: 1, dy: 0 }   // Sağ
+            ];
+
+            directions.forEach(dir => {
+                const neighbor = this.getState(x + dir.dx, y + dir.dy);
+                if (neighbor) {
+                    neighbors.push(neighbor);
+                }
+            });
+            return neighbors;
+        }
+    }
+
+    // --- 3. SİMÜLASYON YÖNETİMİ  ---
+
+    const GRID_SIZE = 10;
+    const world = new GridWorld(GRID_SIZE);
+    let currentState = world.getState(0, 0); // Sol üstten başla
+    let temperature = 100;
+    let coolingRate = 0.95;
+    let isRunning = false;
+
+    // Grid'i Ekrana Çiz
+    function drawGrid() {
+        const container = document.getElementById('grid');
+        container.innerHTML = '';
+        
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const cellData = world.getState(x, y);
+                const div = document.createElement('div');
+                div.className = 'cell';
+                // Hücre rengini skora göre ayarla (daha yüksek skor = daha koyu yeşil)
+                const intensity = Math.min(255, cellData.score * 2.5);
+                div.style.backgroundColor = `rgba(0, 255, 0, ${cellData.score / 150})`;
+                
+                div.innerText = cellData.score;
+
+                // Eğer ajan buradaysa işaretle
+                if (currentState.x === x && currentState.y === y) {
+                    div.classList.add('agent');
+                    div.innerText = "Ajan\n(" + cellData.score + ")";
+                }
+                container.appendChild(div);
+            }
+        }
+        document.getElementById('tempDisplay').innerText = temperature.toFixed(2);
+        document.getElementById('scoreDisplay').innerText = currentState.score;
+    }
+
+    // Simülasyon Adımı (Frame)
+    function step() {
+        if (temperature > 0.5) {
+            // Algoritmayı çalıştır (Senin kodun burada devreye giriyor)
+            currentState = Algorithm.simulatedAnnealing(currentState, world, temperature);
+            
+            // Soğutma işlemi
+            temperature *= coolingRate;
+            
+            drawGrid();
+            setTimeout(step, 200); // Hareketi görebilmek için yavaşlatıyoruz
+        } else {
+            alert("Simülasyon Bitti! Ulaşılan Skor: " + currentState.score);
+            isRunning = false;
+        }
+    }
+
+    function startSimulation() {
+        if (!isRunning) {
+            isRunning = true;
+            // Reset
+            currentState = world.getState(0, 0);
+            temperature = 200;
+            step();
+        }
+    }
+
+    // İlk çizim
+    drawGrid();
+
+</script>
+
+</body>
+</html>
