@@ -158,3 +158,163 @@
 </body>
 
 </html>
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>İlayda'nın Ajan Testi - YAVAŞ MOD</title>
+    <style>
+        canvas {
+            border: 2px solid #333;
+            margin-top: 10px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+
+        #status {
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-bottom: 5px;
+            color: #333;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Terraform God - Logic Test (Slow Motion)</h2>
+    <div id="status">Durum: Bekleniyor...</div>
+    <canvas id="gameCanvas" width="300" height="300"></canvas>
+
+    <script>
+        
+        class CivilizationAgent {
+            constructor(x, y, gridMap) {
+                this.x = x;
+                this.y = y;
+                this.gridMap = gridMap;
+                this.isStuck = false;
+                this.color = "red";
+            }
+
+            getCurrentElevation() {
+                if (this.x >= 0 && this.x < 10 && this.y >= 0 && this.y < 10)
+                    return this.gridMap[this.x][this.y];
+                return -1;
+            }
+
+            update() {
+                if (this.isStuck) return;
+
+                const currentHeight = this.getCurrentElevation();
+                let bestHeight = currentHeight;
+                let bestMove = null;
+
+                // 4 Yön Kontrolü
+                const directions = [
+                    { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                    { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
+                ];
+
+                for (let dir of directions) {
+                    const newX = this.x + dir.dx;
+                    const newY = this.y + dir.dy;
+
+                    if (newX >= 0 && newX < 10 && newY >= 0 && newY < 10) {
+                        const neighborHeight = this.gridMap[newX][newY];
+                        // Sadece daha yüksekse git
+                        if (neighborHeight > bestHeight) {
+                            bestHeight = neighborHeight;
+                            bestMove = { x: newX, y: newY };
+                        }
+                    }
+                }
+
+                if (bestMove) {
+                    this.x = bestMove.x;
+                    this.y = bestMove.y;
+                    this.color = "red";
+                    document.getElementById("status").innerText = `Durum: Tırmanıyor... (Yükseklik: ${bestHeight})`;
+                    document.getElementById("status").style.color = "red";
+                } else {
+                    this.isStuck = true;
+                    this.color = "yellow";
+                    document.getElementById("status").innerText = "Durum: Zirveye Ulaşıldı ve Sıkıştı! (Local Maxima)";
+                    document.getElementById("status").style.color = "#d4ac0d"; // Koyu sarı yazı
+                }
+            }
+
+            draw(ctx, cellSize) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x * cellSize + cellSize / 2, this.y * cellSize + cellSize / 2, cellSize / 3, 0, Math.PI * 2);
+                ctx.fill();
+                // Ajanın etrafına belirginlik için siyah çizgi
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "black";
+                ctx.stroke();
+            }
+        }
+
+        // --- 2. TEST ORTAMI ---
+        // --- YENİ HARİTA (Zirve Yukarıda) ---
+        // 95 (Zirve) en üstte, 10 (Başlangıç) en altta.
+        const testGrid = [
+            [95, 90, 85, 0, 0, 0, 0, 0, 0, 0], // <-- Zirve burada (Üstte)
+            [0, 0, 80, 75, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 70, 65, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 60, 55, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 50, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 40, 30, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 20, 10, 0, 0], // <-- Başlangıç burada (Altta)
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        ];
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const cellSize = 30;
+
+        // Ajanı en başa (Sol Üst - 0,0) koyuyoruz.
+        const myAgent = new CivilizationAgent(6, 7, testGrid);
+
+        // --- OYUN DÖNGÜSÜ ---
+        // 1500 ms = 1.5 Saniye. Her adımda 1.5 saniye bekleyecek.
+        setInterval(() => {
+            // 1. Temizle
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Haritayı Çiz
+            for (let x = 0; x < 10; x++) {
+                for (let y = 0; y < 10; y++) {
+                    let val = testGrid[x][y];
+                    // Yükseklik 0 ise çok koyu, yüksekse beyaz
+                    let colorVal = val === 0 ? 30 : Math.floor((val / 100) * 255);
+                    ctx.fillStyle = `rgb(${colorVal}, ${colorVal}, ${colorVal})`;
+                    ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                    ctx.strokeStyle = "#444";
+                    ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                    // Sayıları da içine yazalım yolu görmek için
+                    if (val > 0) {
+                        ctx.fillStyle = "red";
+                        ctx.font = "10px Arial";
+                        ctx.fillText(val, x * cellSize + 5, y * cellSize + 20);
+                    }
+                }
+            }
+
+            // 3. Ajanı Güncelle ve Çiz
+            myAgent.update();
+            myAgent.draw(ctx, cellSize);
+
+        }, 1000); // <-- BURASI HIZ AYARI (1000 = 1 saniye)
+    </script>
+</body>
+
+</html>
