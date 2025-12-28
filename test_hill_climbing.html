@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Hill Climbing Test Simülasyonu</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h2 { color: #333; }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        canvas {
+            border: 2px solid #555;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 250px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .box { width: 15px; height: 15px; margin-right: 10px; border: 1px solid #ccc; }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 15px;
+        }
+        button:hover { background-color: #218838; }
+        #status { margin-top: 15px; font-weight: bold; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h2>Hill Climbing Algoritma Testi</h2>
+
+    <div class="container">
+        <canvas id="simCanvas" width="400" height="400"></canvas>
+
+        <div class="controls">
+            <h3>Harita Lejandı</h3>
+            <div class="legend-item"><div class="box" style="background: #2ecc71;"></div> Köy (Zirve - 100p)</div>
+            <div class="legend-item"><div class="box" style="background: #8e44ad;"></div> Dağ (Yüksek - 80p)</div>
+            <div class="legend-item"><div class="box" style="background: #f1c40f;"></div> Düzlük (Orta - 50p)</div>
+            <div class="legend-item"><div class="box" style="background: #e74c3c;"></div> Kuraklık (Düşük - 10p)</div>
+            
+            <hr>
+            <div id="status">Durum: Başlatılmayı bekliyor...</div>
+            <div id="coords">Konum: -</div>
+            <div id="score">Puan: -</div>
+
+            <button onclick="startSimulation()">Simülasyonu Başlat</button>
+        </div>
+    </div>
+
+<script>
+// ==========================================
+// 1. BÖLÜM: SENİN AJAN KODUN (Buraya yapıştırıldı)
+// ==========================================
+
+class CivilizationAgent {
+    constructor(x, y, gridMap) {
+        this.x = x;
+        this.y = y;
+        this.gridMap = gridMap; 
+        this.isStuck = false;
+        this.pathHistory = []; 
+    }
+
+    getScoreFromType(type) {
+        // 1 (Köy) = 100, 3 (Dağ) = 80, 0 (Düzlük) = 50, 2 (Kuraklık) = 10
+        if (type === 1) return 100; 
+        if (type === 3) return 80;  
+        if (type === 0) return 50;  
+        if (type === 2) return 10;  
+        return 0;
+    }
+
+    getElevation(x, y) {
+        if (y >= 0 && y < this.gridMap.length && x >= 0 && x < this.gridMap[0].length) {
+            let zoneType = this.gridMap[y][x]; 
+            return this.getScoreFromType(zoneType);
+        }
+        return -999; 
+    }
+
+    update() {
+        if (this.isStuck) return;
+
+        const currentScore = this.getElevation(this.x, this.y);
+        
+        const directions = [
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
+        ];
+
+        let bestScoreFound = -Infinity;
+        let bestCandidates = []; 
+
+        // 1. ADIM: Komşuları Tara
+        for (let dir of directions) {
+            const nx = this.x + dir.dx;
+            const ny = this.y + dir.dy;
+
+            if (nx < 0 || nx >= this.gridMap[0].length || ny < 0 || ny >= this.gridMap.length) continue;
+
+            const neighborScore = this.getElevation(nx, ny);
+
+            if (neighborScore > bestScoreFound) {
+                bestScoreFound = neighborScore;
+                bestCandidates = [{ x: nx, y: ny }];
+            } 
+            else if (neighborScore === bestScoreFound) {
+                bestCandidates.push({ x: nx, y: ny });
+            }
+        }
+
+        // 2. ADIM: Karar Ver
+        if (bestScoreFound < currentScore) {
+            this.isStuck = true;
+            console.log("Local Maxima: Sıkıştım.");
+        }
+        else {
+            const move = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
+            this.x = move.x;
+            this.y = move.y;
+            this.isStuck = false;
+        }
+    }
+}
+
+// ==========================================
+// 2. BÖLÜM: TEST ORTAMI VE HARİTA
+// ==========================================
+
+const canvas = document.getElementById("simCanvas");
+const ctx = canvas.getContext("2d");
+const ROWS = 20;
+const COLS = 20;
+const TILE_SIZE = 20; // Her kare 20x20 piksel
+
+// Harita verisi (2D Array)
+let gridMap = [];
+let agent = null;
+let timer = null;
+
+// Renk tanımları
+const COLORS = {
+    0: "#f1c40f", // Düzlük (Sarı)
+    1: "#2ecc71", // Köy (Yeşil)
+    2: "#e74c3c", // Kuraklık (Kırmızı)
+    3: "#8e44ad"  // Dağ (Mor)
+};
+
+// Test için özel bir harita oluşturuyoruz
+function generateMap() {
+    gridMap = [];
+    for(let y = 0; y < ROWS; y++) {
+        let row = [];
+        for(let x = 0; x < COLS; x++) {
+            row.push(0); // Her yer önce düzlük (50p)
+        }
+        gridMap.push(row);
+    }
+
+    // Ortaya bir Dağ Kütlesi (80p) koyalım
+    for(let y = 5; y < 15; y++) {
+        for(let x = 5; x < 15; x++) {
+            gridMap[y][x] = 3; 
+        }
+    }
+
+    // Dağın tepesine bir Köy (100p) koyalım (ZİRVE)
+    gridMap[10][10] = 1; 
+
+    // Bir köşeye de Kuraklık (10p) koyalım
+    for(let y = 0; y < 4; y++) {
+        for(let x = 0; x < 4; x++) {
+            gridMap[y][x] = 2;
+        }
+    }
+}
+
+function draw() {
+    // 1. Haritayı Çiz
+    for(let y = 0; y < ROWS; y++) {
+        for(let x = 0; x < COLS; x++) {
+            let type = gridMap[y][x];
+            ctx.fillStyle = COLORS[type];
+            ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            // Grid çizgileri
+            ctx.strokeStyle = "rgba(0,0,0,0.1)";
+            ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
+    // 2. Ajanı Çiz
+    if(agent) {
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        // Ajanı daire olarak çiz
+        ctx.arc(
+            agent.x * TILE_SIZE + TILE_SIZE/2, 
+            agent.y * TILE_SIZE + TILE_SIZE/2, 
+            TILE_SIZE/3, 0, Math.PI*2
+        );
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
+
+function startSimulation() {
+    if(timer) clearInterval(timer);
+
+    generateMap();
+    
+    // Ajanı sol üst köşeye yakın bir düzlüğe koyalım (0, 5)
+    // Böylece önce düzlükte gezip dağı bulması gerekecek.
+    agent = new CivilizationAgent(0, 5, gridMap);
+    
+    document.getElementById("status").innerText = "Durum: Çalışıyor...";
+    document.getElementById("status").style.color = "blue";
+
+    // Simülasyon Döngüsü (Hız: 300ms)
+    timer = setInterval(() => {
+        agent.update();
+        draw();
+        updateUI();
+
+        if(agent.isStuck) {
+            clearInterval(timer);
+            document.getElementById("status").innerText = "Durum: LOCAL MAXIMA (Sıkıştı)";
+            document.getElementById("status").style.color = "red";
+            alert("Ajan Zirveye ulaştı veya sıkıştı!");
+        }
+    }, 200);
+}
+
+function updateUI() {
+    if(!agent) return;
+    document.getElementById("coords").innerText = `Konum: (${agent.x}, ${agent.y})`;
+    let score = agent.getElevation(agent.x, agent.y);
+    document.getElementById("score").innerText = `Mevcut Puan: ${score}`;
+}
+
+// Sayfa açılınca boş haritayı çiz
+generateMap();
+draw();
+
+</script>
+</body>
+</html>
