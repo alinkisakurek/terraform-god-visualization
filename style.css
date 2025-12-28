@@ -1,0 +1,172 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #f1f2f4;
+    color: #111;
+}
+
+.topbar {
+    height: 56px;
+    background: #1f78d1;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.topbar__title {
+    font-size: 18px;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 18px;
+    padding: 18px;
+}
+
+.board-card,
+.side-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.board-card {
+    padding: 16px;
+}
+
+.side-card {
+    padding: 16px;
+}
+
+.map-wrap {
+    position: relative;
+    width: 960px;
+    height: 960px;
+    border-radius: 12px;
+    overflow: hidden;
+
+    /* Seam olursa siyah görünmesin: */
+    background: #cdbf8b;
+}
+
+/* canvas'ı CSS ile büyütmüyoruz => seam yok */
+#map {
+    width: 960px;
+    height: 960px;
+    display: block;
+    image-rendering: pixelated;
+}
+
+.agent-sprite {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 32px;
+    height: 32px;
+    image-rendering: pixelated;
+    pointer-events: none;
+    filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.25));
+}
+
+.side-card h2 {
+    margin: 0 0 10px;
+    font-size: 22px;
+}
+
+.side-card h3 {
+    margin: 16px 0 8px;
+    font-size: 18px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.label {
+    color: #333;
+}
+
+.value {
+    font-weight: 700;
+}
+
+.muted {
+    color: #444;
+    margin-top: 6px;
+    font-size: 14px;
+}
+
+#tempSlider {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.btn {
+    width: 100%;
+    margin-top: 12px;
+    border: 0;
+    background: #2f7d32;
+    color: #fff;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn:hover {
+    filter: brightness(1.03);
+}
+
+.legend {
+    margin-top: 8px;
+    display: grid;
+    gap: 8px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #222;
+}
+
+.swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.sw-transition {
+    background: #E7DCA6;
+}
+
+.sw-village {
+    background: #69c256;
+}
+
+.sw-drought {
+    background: #e6a24a;
+}
+
+.sw-mountain {
+    background: #6B4F33;
+}

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="tr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Blind Bot – Localization Game</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="topbar__title">Blind Bot – Localization Game</div>
+    </header>
+
+    <main class="layout">
+        <section class="board-card">
+            <div class="map-wrap">
+                <canvas id="map"></canvas>
+
+                <!-- Agent (overlay) -->
+                <img id="agentSprite" class="agent-sprite" src="assets/villager.png" alt="agent" />
+            </div>
+        </section>
+
+        <aside class="side-card">
+            <h2>Info</h2>
+
+            <div class="info-row">
+                <div class="label">Agent Position:</div>
+                <div class="value" id="agentPos">(0, 0)</div>
+            </div>
+
+            <div class="info-row">
+                <div class="label">Start Area:</div>
+                <div class="value">Transition</div>
+            </div>
+
+            <h3>Temperature</h3>
+            <input id="tempSlider" type="range" min="0" max="100" value="50" />
+            <div class="muted">Current Temperature: <span id="tempLabel">50</span></div>
+
+            <button id="regenBtn" class="btn">Regenerate Map Layout</button>
+
+            <h3>Legend</h3>
+            <div class="legend">
+                <div class="legend-item"><span class="swatch sw-transition"></span> Transition (Start / Neutral)</div>
+                <div class="legend-item"><span class="swatch sw-village"></span> Village (Köy)</div>
+                <div class="legend-item"><span class="swatch sw-drought"></span> Drought (Kuraklık)</div>
+                <div class="legend-item"><span class="swatch sw-mountain"></span> Mountain (Dağlık)</div>
+            </div>
+        </aside>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
