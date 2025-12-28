@@ -1,176 +1,90 @@
-// Agent.js - Core Logic (İlayda)
+// Agent.js - Pure Hill Climbing Logic (with Plateau Support)
 
 class CivilizationAgent {
     constructor(x, y, gridMap) {
-        this.x = x;          // Grid üzerindeki X koordinatı
-        this.y = y;          // Grid üzerindeki Y koordinatı
-        this.gridMap = gridMap; // Harita verisi (2D Array)
+        this.x = x;
+        this.y = y;
+        this.gridMap = gridMap; 
+        this.isStuck = false;
         
-        this.isStuck = false; // True olduğunda Local Maxima'dadır
-        this.color = "red";   // Hareket halindeyken kırmızı
+        // We can keep track of the last 10 moves to prevent infinite loops (Optional but recommended)
+        this.pathHistory = []; 
     }
 
-    // Bulunduğu yerin yüksekliğini döndürür
-    getCurrentElevation() {
-        // Harita sınırlarını kontrol et
-        if (this.x >= 0 && this.x < this.gridMap.length && 
-            this.y >= 0 && this.y < this.gridMap[0].length) {
-            return this.gridMap[this.x][this.y];
+    // Convert map types to scores
+    getScoreFromType(type) {
+        // According to game logic:
+        // 1 (Village) = 100
+        // 3 (Mountain) = 80
+        // 0 (Flatland/Plain) = 50
+        // 2 (Drought) = 10
+        if (type === 1) return 100; 
+        if (type === 3) return 80;  
+        if (type === 0) return 50;  
+        if (type === 2) return 10;  
+        return 0;
+    }
+
+    getElevation(x, y) {
+        if (y >= 0 && y < this.gridMap.length && x >= 0 && x < this.gridMap[0].length) {
+            let zoneType = this.gridMap[y][x]; 
+            return this.getScoreFromType(zoneType);
         }
-        return -1; // Hata durumu
+        return -999; // Out of map bounds
     }
 
-    // HILL CLIMBING ALGORİTMASI
-    // Her çağrıldığında 1 adım atar.
     update() {
-        // Eğer sıkıştıysa hareket etme (Daha sonra buraya Sim. Annealing eklenecek)
         if (this.isStuck) return;
 
-        const currentHeight = this.getCurrentElevation();
-        let bestHeight = currentHeight;
-        let bestMove = null;
-
-        // 4 Yönlü Hareket (Yukarı, Aşağı, Sol, Sağ)
+        const currentScore = this.getElevation(this.x, this.y);
+        
+        // Scan 4 Directions
         const directions = [
-            { dx: 0, dy: -1 }, // Yukarı
-            { dx: 0, dy: 1 },  // Aşağı
-            { dx: -1, dy: 0 }, // Sol
-            { dx: 1, dy: 0 }   // Sağ
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
         ];
 
-        // 1. Komşuları Tara (Scan Neighbors)
+        let bestScoreFound = -Infinity;
+        let bestCandidates = []; // List of neighbors with the best score
+
+        // STEP 1: Visit all neighbors and find the highest score
         for (let dir of directions) {
-            const newX = this.x + dir.dx;
-            const newY = this.y + dir.dy;
+            const nx = this.x + dir.dx;
+            const ny = this.y + dir.dy;
 
-            // Sınır kontrolü
-            if (newX >= 0 && newX < this.gridMap.length && 
-                newY >= 0 && newY < this.gridMap[0].length) {
-                
-                const neighborHeight = this.gridMap[newX][newY];
+            // Do not go out of map bounds
+            if (nx < 0 || nx >= this.gridMap[0].length || ny < 0 || ny >= this.gridMap.length) continue;
 
-                // 2. Sadece daha yüksekse git (Greedy Approach)
-                if (neighborHeight > bestHeight) {
-                    bestHeight = neighborHeight;
-                    bestMove = { x: newX, y: newY };
-                }
+            const neighborScore = this.getElevation(nx, ny);
+
+            // If this neighbor is better than the best found so far, reset the list
+            if (neighborScore > bestScoreFound) {
+                bestScoreFound = neighborScore;
+                bestCandidates = [{ x: nx, y: ny }];
+            } 
+            // If this neighbor is equal to the best, add to list (for random selection)
+            else if (neighborScore === bestScoreFound) {
+                bestCandidates.push({ x: nx, y: ny });
             }
         }
 
-        // 3. Karar Ver (Move or Stuck)
-        if (bestMove) {
-            this.x = bestMove.x;
-            this.y = bestMove.y;
-            this.isStuck = false;
-            this.color = "red"; // Tırmanıyor
-        } else {
-            // Gidecek daha yüksek yer yok
-            this.isStuck = true;
-            this.color = "yellow"; // Sıkıştı (Local Maxima)
-            console.log("Ajan Local Maxima'da sıkıştı.");
-        }
-    }
-
-    // Çizim fonksiyonu (Nisanur'un Canvas'ına entegre edilecek)
-    draw(ctx, cellSize) {
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        // Kare merkezine daire çiz
-        ctx.arc(
-            this.x * cellSize + cellSize / 2, 
-            this.y * cellSize + cellSize / 2, 
-            cellSize / 3, 
-            0, 
-            Math.PI * 2
-        );
-        ctx.fill();
-    }
-}
-// Agent.js - Core Logic (İlayda)
-
-class CivilizationAgent {
-    constructor(x, y, gridMap) {
-        this.x = x;          // Grid üzerindeki X koordinatı
-        this.y = y;          // Grid üzerindeki Y koordinatı
-        this.gridMap = gridMap; // Harita verisi (2D Array)
+        // STEP 2: Decide (Hill Climbing Logic)
         
-        this.isStuck = false; // True olduğunda Local Maxima'dadır
-        this.color = "red";   // Hareket halindeyken kırmızı
-    }
-
-    // Bulunduğu yerin yüksekliğini döndürür
-    getCurrentElevation() {
-        // Harita sınırlarını kontrol et
-        if (this.x >= 0 && this.x < this.gridMap.length && 
-            this.y >= 0 && this.y < this.gridMap[0].length) {
-            return this.gridMap[this.x][this.y];
-        }
-        return -1; // Hata durumu
-    }
-
-    // HILL CLIMBING ALGORİTMASI
-    // Her çağrıldığında 1 adım atar.
-    update() {
-        // Eğer sıkıştıysa hareket etme (Daha sonra buraya Sim. Annealing eklenecek)
-        if (this.isStuck) return;
-
-        const currentHeight = this.getCurrentElevation();
-        let bestHeight = currentHeight;
-        let bestMove = null;
-
-        // 4 Yönlü Hareket (Yukarı, Aşağı, Sol, Sağ)
-        const directions = [
-            { dx: 0, dy: -1 }, // Yukarı
-            { dx: 0, dy: 1 },  // Aşağı
-            { dx: -1, dy: 0 }, // Sol
-            { dx: 1, dy: 0 }   // Sağ
-        ];
-
-        // 1. Komşuları Tara (Scan Neighbors)
-        for (let dir of directions) {
-            const newX = this.x + dir.dx;
-            const newY = this.y + dir.dy;
-
-            // Sınır kontrolü
-            if (newX >= 0 && newX < this.gridMap.length && 
-                newY >= 0 && newY < this.gridMap[0].length) {
-                
-                const neighborHeight = this.gridMap[newX][newY];
-
-                // 2. Sadece daha yüksekse git (Greedy Approach)
-                if (neighborHeight > bestHeight) {
-                    bestHeight = neighborHeight;
-                    bestMove = { x: newX, y: newY };
-                }
-            }
-        }
-
-        // 3. Karar Ver (Move or Stuck)
-        if (bestMove) {
-            this.x = bestMove.x;
-            this.y = bestMove.y;
-            this.isStuck = false;
-            this.color = "red"; // Tırmanıyor
-        } else {
-            // Gidecek daha yüksek yer yok
+        // If the best place around is worse than where I am -> I AM AT PEAK (Stuck)
+        if (bestScoreFound < currentScore) {
             this.isStuck = true;
-            this.color = "yellow"; // Sıkıştı (Local Maxima)
-            console.log("Ajan Local Maxima'da sıkıştı.");
+            console.log("Local Maxima: Everywhere around me is worse than here.");
         }
-    }
-
-    // Çizim fonksiyonu (Nisanur'un Canvas'ına entegre edilecek)
-    draw(ctx, cellSize) {
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        // Kare merkezine daire çiz
-        ctx.arc(
-            this.x * cellSize + cellSize / 2, 
-            this.y * cellSize + cellSize / 2, 
-            cellSize / 3, 
-            0, 
-            Math.PI * 2
-        );
-        ctx.fill();
+        // If the best place around is better than me OR equal (Plateau) -> MOVE
+        else {
+            // Randomly select one of the equal or better candidates (To avoid bias towards Right/Left)
+            const move = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
+            
+            // If the selected place has the same score but different position, go there
+            // (Note: We allow wandering on plateaus)
+            this.x = move.x;
+            this.y = move.y;
+            this.isStuck = false;
+        }
     }
 }
