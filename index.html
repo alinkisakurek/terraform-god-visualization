@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
@@ -18,13 +18,18 @@
             <div class="map-wrap">
                 <canvas id="map"></canvas>
 
-                <!-- Agent (overlay) -->
                 <img id="agentSprite" class="agent-sprite" src="assets/villager.png" alt="agent" />
             </div>
         </section>
 
         <aside class="side-card">
             <h2>Info</h2>
+
+            <div
+                style="background: #eee; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ccc;">
+                <strong>AI Status:</strong>
+                <div id="aiStatusText" style="color: #d9534f; font-weight: bold;">Waiting...</div>
+            </div>
 
             <div class="info-row">
                 <div class="label">Agent Position:</div>
@@ -36,22 +41,26 @@
                 <div class="value">Transition</div>
             </div>
 
+
             <h3>Temperature</h3>
             <input id="tempSlider" type="range" min="0" max="100" value="50" />
             <div class="muted">Current Temperature: <span id="tempLabel">50</span></div>
 
             <button id="regenBtn" class="btn">Regenerate Map Layout</button>
 
+            <button id="startAiBtn" class="btn" style="background-color: #d9534f; margin-top: 10px;">Start Hill Climbing</button>
+
             <h3>Legend</h3>
             <div class="legend">
                 <div class="legend-item"><span class="swatch sw-transition"></span> Transition (Start / Neutral)</div>
-                <div class="legend-item"><span class="swatch sw-village"></span> Village (Köy)</div>
-                <div class="legend-item"><span class="swatch sw-drought"></span> Drought (Kuraklık)</div>
-                <div class="legend-item"><span class="swatch sw-mountain"></span> Mountain (Dağlık)</div>
+                <div class="legend-item"><span class="swatch sw-village"></span> Village</div>
+                <div class="legend-item"><span class="swatch sw-drought"></span> Drought</div>
+                <div class="legend-item"><span class="swatch sw-mountain"></span> Mountain</div>
             </div>
         </aside>
     </main>
 
+    <script src="Agent.js"></script>
     <script src="script.js"></script>
 </body>
 

@@ -73,7 +73,7 @@ ASSETS.deadTree.src = "assets/DeadTree.png";
 let grassPattern = null;
 let droughtPattern = null;
 
-// Pattern’ı 32x32’e ölçekle
+// Scale pattern to 32x32
 function makeScaledPattern(img) {
     const o = document.createElement("canvas");
     o.width = DRAW_TILE;
@@ -650,8 +650,122 @@ function waitForAssets(cb) {
     const finish = () => { done++; if (done === imgs.length) cb(); };
     imgs.forEach((im) => { im.onload = finish; im.onerror = finish; });
 }
+// ==========================================
+// PURE HILL CLIMBING - CONTROLLED AND STOPPABLE MODE
+// ==========================================
 
-function init() {
+let myAgent = null;
+let aiInterval = null;
+
+// Select HTML elements
+const startAiBtn = document.getElementById("startAiBtn");
+const statusText = document.getElementById("aiStatusText");
+const spriteImg = document.getElementById("agentSprite"); 
+
+// Function to FORCE and MANUALLY move the sprite
+function forceMoveSprite() {
+    const TILE_SIZE = 32; // Map scale (16x2)
+    
+    if (spriteImg) {
+        spriteImg.style.left = (agentX * TILE_SIZE) + "px";
+        spriteImg.style.top = (agentY * TILE_SIZE) + "px";
+    }
+}
+
+// Helper function to completely stop AI and loop
+function stopAI() {
+    if (aiInterval) {
+        clearInterval(aiInterval);
+        aiInterval = null;
+    }
+}
+
+function startAI() {
+    // 1. First stop existing loop for a clean start
+    stopAI();
+
+    // 2. Create agent at current (probably 0,0) position
+    myAgent = new CivilizationAgent(agentX, agentY, zoneMap);
+    
+    if(statusText) {
+        statusText.innerText = "Hill Climbing Started...";
+        statusText.style.color = "blue";
+    }
+    
+    console.log("AI Started. TILE_SIZE: 32px.");
+
+    aiInterval = setInterval(() => {
+        // --- LOGIC ---
+        myAgent.update();
+
+        // --- DATA SYNC ---
+        agentX = myAgent.x;
+        agentY = myAgent.y;
+
+        // --- VISUAL ---
+        forceMoveSprite(); 
+        
+        // (Optional) UI update
+        if(typeof updateAgentUI === "function") updateAgentUI();
+
+        // --- INFO ---
+        const score = myAgent.getElevation(agentX, agentY);
+        if(statusText) {
+            statusText.innerHTML = `Position: (${agentX}, ${agentY})<br>Score: ${score}`;
+            statusText.style.color = "#333";
+        }
+
+        // --- END CHECK ---
+        if (myAgent.isStuck) {
+            stopAI(); // Stop loop
+            if(statusText) {
+                statusText.innerHTML = `<strong>LOCAL MAXIMA!</strong><br>Stuck.<br>Score: ${score}`;
+                statusText.style.color = "red";
+            }
+            alert("Agent stuck at Local Maxima!");
+        }
+
+    }, 100); // 100ms speed
+}
+
+// --- BUTTON CLICK EVENTS ---
+
+// 1. Start Button
+if(startAiBtn) {
+    // Use addEventListener to avoid overwriting existing listeners
+    startAiBtn.addEventListener("click", () => {
+        startAI();
+    });
+}
+
+// 2. Regenerate Button - CRITICAL FIX HERE
+if(regenBtn) {
+    // Adding an extra task to silence AI when this button is clicked
+    regenBtn.addEventListener("click", () => {
+        // A. Kill Loop (Stop agent movement)
+        stopAI();
+
+        // B. Reset Position
+        agentX = 0;
+        agentY = 0;
+
+        // C. Reset Visual (Pull to 0,0 point)
+        forceMoveSprite();
+
+        // D. Update Status Text
+        if(statusText) {
+            statusText.innerText = "Map Regenerated. AI Stopped.";
+            statusText.style.color = "green";
+        }
+        
+        console.log("Regenerate clicked: AI stopped and position reset.");
+    });
+} else {
+    console.warn("Warning: 'regenBtn' not found, stop feature might not work.");
+}
+
+// Initial Setup on Page Load
+init = function() {
     agentX = 0;
     agentY = 0;
     generateLayout();
@@ -660,7 +774,11 @@ function init() {
         if (ASSETS.grassTex.complete) grassPattern = makeScaledPattern(ASSETS.grassTex);
         if (ASSETS.droughtTex.complete) droughtPattern = makeScaledPattern(ASSETS.droughtTex);
         renderAll();
+        
+        // Set initial position
+        forceMoveSprite();
     });
 }
 
+// Run Init
 init();
