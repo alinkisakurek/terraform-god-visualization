@@ -74,6 +74,8 @@ const ASSETS = {
     tree: new Image(),
     house: new Image(),
     deadTree: new Image(),
+    tree2: new Image(),
+    log1: new Image(),
 };
 
 ASSETS.grassTex.src = "assets/grass03.png";
@@ -82,6 +84,8 @@ ASSETS.mountain.src = "assets/mountain.png";
 ASSETS.tree.src = "assets/tree.png";
 ASSETS.house.src = "assets/house.png";
 ASSETS.deadTree.src = "assets/DeadTree.png";
+ASSETS.tree2.src = "assets/Tree2.png";
+ASSETS.log1.src = "assets/10.png";
 
 let grassPattern = null;
 let droughtPattern = null;
@@ -508,6 +512,31 @@ function drawTreesAndDeadTrees() {
     }
 }
 
+function drawTransitionDecorations() {
+    // Draw Tree2 and Log1 in transition areas with low probability for aesthetic appeal
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (zoneMap[y][x] !== Z.TRANSITION) continue;
+            if (isOccupiedByAnyHouse(x, y)) continue;
+            
+            // Use different seeds for tree2 and log1 to ensure variety
+            const treeNoise = cellNoise(x, y, 7501);
+            const logNoise = cellNoise(x, y, 7502);
+            
+            // Low probability (8% for tree2, 6% for log1) - just a bit, not too much
+            if (ASSETS.tree2.complete && treeNoise < 0.08) {
+                ctx.drawImage(ASSETS.tree2, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
+            } else if (ASSETS.log1.complete && logNoise < 0.06) {
+                // Draw 10.png smaller (70% of tile size) and centered
+                const scale = 0.7;
+                const size = DRAW_TILE * scale;
+                const offset = (DRAW_TILE - size) / 2;
+                ctx.drawImage(ASSETS.log1, x * DRAW_TILE + offset, y * DRAW_TILE + offset, size, size);
+            }
+        }
+    }
+}
+
 function drawVignette() {
     const cx = canvas.width / 2; const cy = canvas.height / 2;
     const grd = ctx.createRadialGradient(cx, cy, 160, cx, cy, 560);
@@ -523,6 +552,9 @@ function renderAll() {
     
     // GÜNCELLENMİŞ DAĞ ÇİZİMİ
     drawMountainsPerTile();
+    
+    // Draw transition area decorations (Tree2 and Log1)
+    drawTransitionDecorations();
     
     drawHouses();
     drawTreesAndDeadTrees();
@@ -601,11 +633,6 @@ if(startAiBtn) {
     startAiBtn.addEventListener("click", () => {
         stopHillClimbing();
         
-        // Use smart start position for Hill Climber (High chance of trap)
-        const startPos = getSmartStartPos(true);
-        agentX = startPos.x;
-        agentY = startPos.y;
-        
         myAgent = new CivilizationAgent(agentX, agentY, zoneMap);
         
         if (statusText) {
@@ -643,11 +670,6 @@ if(startSaBtn) {
     startSaBtn.addEventListener("click", () => {
         stopAnnealing();
         
-        // SA Start Position can be random (or use smart pos with 'false')
-        const startPos = getSmartStartPos(false);
-        annealingAgentX = startPos.x;
-        annealingAgentY = startPos.y;
-
         let sliderValue = parseInt(tempSlider.value); 
         
         saAgentObj = new AnnealingAgent(annealingAgentX, annealingAgentY, zoneMap, sliderValue);
