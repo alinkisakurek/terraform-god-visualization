@@ -19,6 +19,8 @@
                 <canvas id="map"></canvas>
 
                 <img id="agentSprite" class="agent-sprite" src="assets/villager.png" alt="agent" />
+
+                <img id="annealingAgentSprite" class="agent-sprite sa-agent" src="assets/villager.png" alt="sa-agent" />
             </div>
         </section>
 
@@ -32,23 +34,36 @@
             </div>
 
             <div class="info-row">
-                <div class="label">Agent Position:</div>
+                <div class="label">Start Area:</div>
+                <div class="value" id="startArea">Transition</div>
+            </div>
+
+            <div class="info-row">
+                <div class="label" style="color:red">Hill Climber:</div>
                 <div class="value" id="agentPos">(0, 0)</div>
             </div>
 
             <div class="info-row">
-                <div class="label">Start Area:</div>
-                <div class="value">Transition</div>
+                <div class="label" style="color:blue">S. Annealing:</div>
+                <div class="value" id="saPos">(1, 1)</div>
             </div>
 
+            <div class="info-row">
+                <div class="label">Temperature:</div>
+                <div class="value" id="saTempDisplay">50</div>
+            </div>
 
-            <h3>Temperature</h3>
+            <h3>Temperature Control</h3>
             <input id="tempSlider" type="range" min="0" max="100" value="50" />
-            <div class="muted">Current Temperature: <span id="tempLabel">50</span></div>
+            <div class="muted">Set Value: <span id="tempLabel">50</span></div>
 
             <button id="regenBtn" class="btn">Regenerate Map Layout</button>
 
-            <button id="startAiBtn" class="btn" style="background-color: #d9534f; margin-top: 10px;">Start Hill Climbing</button>
+            <button id="startAiBtn" class="btn" style="background-color: #d9534f; margin-top: 10px;">Start Hill
+                Climbing</button>
+
+            <button id="startSaBtn" class="btn" style="background-color: #1f78d1; margin-top: 10px;">Start Simulated
+                Annealing</button>
 
             <h3>Legend</h3>
             <div class="legend">
