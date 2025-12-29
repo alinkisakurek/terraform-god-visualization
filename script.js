@@ -11,21 +11,35 @@ ctx.imageSmoothingEnabled = false;
 canvas.width = COLS * DRAW_TILE;
 canvas.height = ROWS * DRAW_TILE;
 
+// --- Element Selectors ---
 const agentSprite = document.getElementById("agentSprite");
+const annealingSprite = document.getElementById("annealingAgentSprite"); 
 const agentPosEl = document.getElementById("agentPos");
+const saPosEl = document.getElementById("saPos"); 
+const saTempDisplay = document.getElementById("saTempDisplay");
 const startAreaEl = document.getElementById("startArea");
 const tempSlider = document.getElementById("tempSlider");
 const tempLabel = document.getElementById("tempLabel");
 const regenBtn = document.getElementById("regenBtn");
+const startAiBtn = document.getElementById("startAiBtn");
+const startSaBtn = document.getElementById("startSaBtn");
+const statusText = document.getElementById("aiStatusText");
 
+// --- Agent Variables ---
 let agentX = 0;
 let agentY = 0;
+let annealingAgentX = 1; 
+let annealingAgentY = 1;
 
+// --- Map Data ---
 const Z = { TRANSITION: 0, VILLAGE: 1, DROUGHT: 2, MOUNTAIN: 3 };
 let zoneMap = [];
 let villageCenters = [];
 let smallHouses = [];
+let mountainPositions = []; // Track mountain centers
+let villagePosition = null; // Track main village position
 
+// --- Helpers ---
 function rand() { return Math.random(); }
 function randInt(a, b) { return Math.floor(rand() * (b - a + 1)) + a; }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -38,7 +52,6 @@ function neighbors4(x, y) {
     if (y < ROWS - 1) out.push([x, y + 1]);
     return out;
 }
-
 
 function mulberry32(seed) {
     return function () {
@@ -53,7 +66,7 @@ function cellNoise(x, y, seed = 1337) {
     return mulberry32(s >>> 0)();
 }
 
-
+// --- Assets ---
 const ASSETS = {
     grassTex: new Image(),
     droughtTex: new Image(),
@@ -61,6 +74,8 @@ const ASSETS = {
     tree: new Image(),
     house: new Image(),
     deadTree: new Image(),
+    tree2: new Image(),
+    log1: new Image(),
 };
 
 ASSETS.grassTex.src = "assets/grass03.png";
@@ -69,11 +84,12 @@ ASSETS.mountain.src = "assets/mountain.png";
 ASSETS.tree.src = "assets/tree.png";
 ASSETS.house.src = "assets/house.png";
 ASSETS.deadTree.src = "assets/DeadTree.png";
+ASSETS.tree2.src = "assets/Tree2.png";
+ASSETS.log1.src = "assets/10.png";
 
 let grassPattern = null;
 let droughtPattern = null;
 
-// Scale pattern to 32x32
 function makeScaledPattern(img) {
     const o = document.createElement("canvas");
     o.width = DRAW_TILE;
@@ -85,13 +101,82 @@ function makeScaledPattern(img) {
     return ctx.createPattern(o, "repeat");
 }
 
+// --- POSITIONING LOGIC (SMART TRAPS) ---
+function getSmartStartPos(isHillClimber) {
+    // If it's Hill Climber, try to trap it near a mountain far from village
+    if (isHillClimber && mountainPositions.length > 0 && villagePosition) {
+        
+        // Find mountains far from village
+        const validMountains = mountainPositions.filter(m => {
+            const dx = villagePosition.x - m.x;
+            const dy = villagePosition.y - m.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            return dist > 10; // Must be at least 10 blocks away from village
+        });
 
+        if (validMountains.length > 0) {
+            // Pick a random valid mountain
+            const m = validMountains[randInt(0, validMountains.length - 1)];
+            
+            // Find a Transition spot next to it
+            const neighbors = neighbors4(m.x, m.y);
+            const candidates = neighbors.filter(([nx, ny]) => 
+                zoneMap[ny][nx] === Z.TRANSITION
+            );
+
+            if (candidates.length > 0) {
+                const c = candidates[randInt(0, candidates.length - 1)];
+                return { x: c[0], y: c[1] };
+            }
+        }
+    }
+
+    // Fallback: Random position (or for SA agent)
+    return {
+        x: randInt(2, COLS - 3),
+        y: randInt(2, ROWS - 3)
+    };
+}
+
+// --- MAP GENERATION ---
 function initMap() {
     zoneMap = Array.from({ length: ROWS }, () =>
         Array.from({ length: COLS }, () => Z.TRANSITION)
     );
     villageCenters = [];
     smallHouses = [];
+    mountainPositions = [];
+    villagePosition = null;
+}
+
+function findMountainCenters() {
+    mountainPositions = [];
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (zoneMap[y][x] === Z.MOUNTAIN && !visited[y][x]) {
+                const queue = [[x, y]];
+                visited[y][x] = true;
+                let sumX = 0, sumY = 0, count = 0;
+                
+                while (queue.length > 0) {
+                    const [cx, cy] = queue.shift();
+                    sumX += cx; sumY += cy; count++;
+                    
+                    for (const [nx, ny] of neighbors4(cx, cy)) {
+                        if (zoneMap[ny][nx] === Z.MOUNTAIN && !visited[ny][nx]) {
+                            visited[ny][nx] = true;
+                            queue.push([nx, ny]);
+                        }
+                    }
+                }
+                if (count > 0) {
+                    mountainPositions.push({ x: Math.round(sumX/count), y: Math.round(sumY/count) });
+                }
+            }
+        }
+    }
 }
 
 function growRegion(type, seeds, targetCount, bias = 0.78) {
@@ -108,50 +193,45 @@ function growRegion(type, seeds, targetCount, bias = 0.78) {
         const nbs = neighbors4(x, y);
         const [nx, ny] = nbs[randInt(0, nbs.length - 1)];
 
-
-        if (nx <= 5 && ny <= 5) continue;
+        if (nx <= 1 || nx >= COLS-2 || ny <= 1 || ny >= ROWS-2) continue;
 
         const cur = zoneMap[ny][nx];
-        const allow =
-            (cur === Z.TRANSITION && rand() < bias) || (cur !== type && rand() < 0.03);
+        const allow = (cur === Z.TRANSITION && rand() < bias) || (cur !== type && rand() < 0.05);
+        
         if (allow) {
             zoneMap[ny][nx] = type;
             frontier.push([nx, ny]);
             count++;
         }
-        if (rand() < 0.02) frontier.splice(idx, 1);
+        if (rand() < 0.05) frontier.splice(idx, 1);
     }
 }
 
-function smoothMap(iter = 6) {
+function smoothMap(iter = 4) {
     for (let k = 0; k < iter; k++) {
         const copy = zoneMap.map((r) => r.slice());
-        for (let y = 0; y < ROWS; y++) {
-            for (let x = 0; x < COLS; x++) {
-                if (x <= 5 && y <= 5) {
-                    zoneMap[y][x] = Z.TRANSITION;
-                    continue;
-                }
-
+        for (let y = 1; y < ROWS-1; y++) {
+            for (let x = 1; x < COLS-1; x++) {
                 const counts = { 0: 0, 1: 0, 2: 0, 3: 0 };
                 for (let dy = -1; dy <= 1; dy++) {
                     for (let dx = -1; dx <= 1; dx++) {
                         const nx = x + dx, ny = y + dy;
-                        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
                         counts[copy[ny][nx]]++;
                     }
                 }
-
+                
                 let best = copy[y][x], bestC = -1;
                 for (const t of [Z.TRANSITION, Z.VILLAGE, Z.DROUGHT, Z.MOUNTAIN]) {
-                    if (counts[t] > bestC) {
-                        bestC = counts[t];
-                        best = t;
-                    }
+                    // Small bias to keep current
+                    let c = counts[t];
+                    if(t === copy[y][x]) c += 0.5;
+                    
+                    if (c > bestC) { bestC = c; best = t; }
                 }
-
-                // mountain not too thin
-                if (best === Z.MOUNTAIN && counts[Z.MOUNTAIN] < 5) best = copy[y][x];
+                
+                // Prevent mountains from disappearing too easily
+                if (copy[y][x] === Z.MOUNTAIN && counts[Z.MOUNTAIN] >= 3) best = Z.MOUNTAIN;
+                
                 zoneMap[y][x] = best;
             }
         }
@@ -161,39 +241,64 @@ function smoothMap(iter = 6) {
 function generateLayout() {
     initMap();
 
+    // 1. COMPLEXITY: More Mountains scattered around
+    const numMountains = 6; 
+    for(let i=0; i<numMountains; i++) {
+        const mx = randInt(2, COLS-3);
+        const my = randInt(2, ROWS-3);
+        // Varying sizes for mountains
+        growRegion(Z.MOUNTAIN, [[mx, my]], randInt(15, 40), 0.70);
+    }
 
-    for (let y = 0; y <= 5; y++)
-        for (let x = 0; x <= 5; x++)
-            zoneMap[y][x] = Z.TRANSITION;
+    // 2. Calculate mountain centers immediately to help place Village
+    findMountainCenters();
 
-    const village1 = [[randInt(7, 12), randInt(7, 11)]];
-    const village2 = [[randInt(18, 23), randInt(18, 23)]];
-    const drought1 = [[randInt(20, 26), randInt(4, 9)]];
-    const drought2 = [[randInt(6, 11), randInt(20, 26)]];
-    const mountain = [[randInt(14, 18), randInt(12, 16)]];
+    // 3. VILLAGE: One main big village, far from existing mountains
+    let villageSeed = null;
+    for(let attempt=0; attempt<50; attempt++) {
+        const vx = randInt(5, COLS-6);
+        const vy = randInt(5, ROWS-6);
+        
+        // Check distance to all mountains
+        let tooClose = false;
+        for(const m of mountainPositions) {
+            const d = Math.hypot(vx - m.x, vy - m.y);
+            if(d < 8) { tooClose = true; break; }
+        }
+        
+        if(!tooClose) {
+            villageSeed = [[vx, vy]];
+            break;
+        }
+    }
+    // Fallback if no spot found
+    if(!villageSeed) villageSeed = [[Math.floor(COLS/2), Math.floor(ROWS/2)]];
+    
+    // Grow Village
+    growRegion(Z.VILLAGE, villageSeed, 110, 0.85);
+    villagePosition = { x: villageSeed[0][0], y: villageSeed[0][1] };
 
+    // 4. COMPLEXITY: More Drought patches
+    const numDroughts = 5;
+    for(let i=0; i<numDroughts; i++) {
+        const dx = randInt(2, COLS-3);
+        const dy = randInt(2, ROWS-3);
+        growRegion(Z.DROUGHT, [[dx, dy]], randInt(10, 25), 0.60);
+    }
 
-    growRegion(Z.VILLAGE, village1, 135);
-    growRegion(Z.VILLAGE, village2, 150);
-    growRegion(Z.DROUGHT, drought1, 170);
-    growRegion(Z.DROUGHT, drought2, 160);
-    growRegion(Z.MOUNTAIN, mountain, 78, 0.65);
+    // 5. Smooth
+    smoothMap(4);
 
-    smoothMap(6);
-
-
-    for (let y = 0; y <= 5; y++)
-        for (let x = 0; x <= 5; x++)
-            zoneMap[y][x] = Z.TRANSITION;
-
-    villageCenters = findVillageCenters(2);   // 2 big houses max
-    smallHouses = placeSmallHouses(6);        // a few small houses
+    // 6. Finalize Objects
+    villageCenters = findVillageCenters(2);
+    smallHouses = placeSmallHouses(8); // More houses
+    
+    // Re-calculate mountain centers after smoothing for accurate agent placement
+    findMountainCenters();
 }
-
 
 function fitsBigHouseAt(x, y) {
     if (x < 0 || y < 0 || x + 1 >= COLS || y + 1 >= ROWS) return false;
-    if (x <= 5 && y <= 5) return false;
     return (
         zoneMap[y][x] === Z.VILLAGE &&
         zoneMap[y][x + 1] === Z.VILLAGE &&
@@ -233,7 +338,7 @@ function findVillageCenters(k = 2) {
     const chosen = [];
     for (const c of candidates) {
         if (chosen.length === 0) chosen.push({ x: c.x, y: c.y });
-        else if (chosen.length < k && dist(chosen[0], c) >= 10) chosen.push({ x: c.x, y: c.y });
+        else if (chosen.length < k && dist(chosen[0], c) >= 8) chosen.push({ x: c.x, y: c.y });
         if (chosen.length >= k) break;
     }
     return chosen;
@@ -251,81 +356,60 @@ function isOccupiedByAnyHouse(x, y) {
     return smallHouses.some(h => h.x === x && h.y === y);
 }
 
-
 function placeSmallHouses(maxCount = 6) {
     const list = [];
     const candidates = [];
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-            if (x <= 5 && y <= 5) continue;
+            if (x <= 2 && y <= 2) continue;
             if (zoneMap[y][x] !== Z.VILLAGE) continue;
             if (isInsideBigHouseFootprint(x, y)) continue;
 
             const s = cellNoise(x, y, 5011);
-            if (s < 0.12) candidates.push({ x, y, s });
+            if (s < 0.3) candidates.push({ x, y, s });
         }
     }
-
     candidates.sort((a, b) => a.s - b.s);
 
     for (const c of candidates) {
         if (list.length >= maxCount) break;
-
-
-        const farFromBig = villageCenters.every(b => dist(b, c) >= 6);
-        const farFromSmall = list.every(h => dist(h, c) >= 3.5);
-
+        const farFromBig = villageCenters.every(b => dist(b, c) >= 5);
+        const farFromSmall = list.every(h => dist(h, c) >= 3);
         if (farFromBig && farFromSmall) list.push({ x: c.x, y: c.y });
     }
     return list;
 }
 
+const COLORS = { transition: "#E7DCA6", mountainBase: "#6B4F33" };
 
-const COLORS = {
-    transition: "#E7DCA6",
-    mountainBase: "#6B4F33",
-};
-
-
+// --- DRAWING ---
 function drawSoftGrid() {
     ctx.save();
     ctx.globalAlpha = 1;
     ctx.strokeStyle = "rgba(0,0,0,0.06)";
     ctx.lineWidth = 1;
-
     for (let x = 0; x <= COLS; x++) {
         const px = x * DRAW_TILE + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(px, 0);
-        ctx.lineTo(px, canvas.height);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
     }
     for (let y = 0; y <= ROWS; y++) {
         const py = y * DRAW_TILE + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(0, py);
-        ctx.lineTo(canvas.width, py);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(canvas.width, py); ctx.stroke();
     }
     ctx.restore();
 }
-
 
 function drawTransitionTexture(x, y) {
     const px = x * DRAW_TILE;
     const py = y * DRAW_TILE;
     const n1 = cellNoise(x, y, 3001);
     const n2 = cellNoise(x, y, 3002);
-
     if (n1 < 0.55) {
-        ctx.globalAlpha = 0.08;
-        ctx.fillStyle = "rgba(255,255,255,0.35)";
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.08; ctx.fillStyle = "rgba(255,255,255,0.35)";
+        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE); ctx.globalAlpha = 1;
     }
     if (n2 < 0.35) {
-        ctx.globalAlpha = 0.10;
-        ctx.fillStyle = "rgba(0,0,0,0.20)";
+        ctx.globalAlpha = 0.10; ctx.fillStyle = "rgba(0,0,0,0.20)";
         ctx.fillRect(px + randInt(3, DRAW_TILE - 5), py + randInt(3, DRAW_TILE - 5), 2, 2);
         ctx.globalAlpha = 1;
     }
@@ -337,194 +421,79 @@ function drawCellBackground(x, y) {
     const py = y * DRAW_TILE;
 
     if (z === Z.VILLAGE && grassPattern) {
-        ctx.fillStyle = grassPattern;
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-
-
-        const n = cellNoise(x, y, 2026);
-        ctx.globalAlpha = 0.05;
+        ctx.fillStyle = grassPattern; ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
+        const n = cellNoise(x, y, 2026); ctx.globalAlpha = 0.05;
         ctx.fillStyle = n < 0.5 ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.12)";
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-        ctx.globalAlpha = 1;
-        return;
+        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE); ctx.globalAlpha = 1; return;
     }
-
     if (z === Z.DROUGHT && droughtPattern) {
-        ctx.fillStyle = droughtPattern;
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-
-        const n = cellNoise(x, y, 2027);
-        ctx.globalAlpha = 0.05;
+        ctx.fillStyle = droughtPattern; ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
+        const n = cellNoise(x, y, 2027); ctx.globalAlpha = 0.05;
         ctx.fillStyle = n < 0.5 ? "rgba(0,0,0,0.16)" : "rgba(255,255,255,0.10)";
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-        ctx.globalAlpha = 1;
-        return;
+        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE); ctx.globalAlpha = 1; return;
     }
-
     if (z === Z.MOUNTAIN) {
-        // base (mountain soil)
-        ctx.fillStyle = COLORS.mountainBase;
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-
-        // a tiny highlight noise so it won't be flat
-        const n = cellNoise(x, y, 8881);
-        ctx.globalAlpha = 0.05;
+        ctx.fillStyle = COLORS.mountainBase; ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
+        const n = cellNoise(x, y, 8881); ctx.globalAlpha = 0.05;
         ctx.fillStyle = n < 0.5 ? "rgba(0,0,0,0.20)" : "rgba(255,255,255,0.10)";
-        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
-        ctx.globalAlpha = 1;
-        return;
+        ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE); ctx.globalAlpha = 1; return;
     }
-
-    ctx.fillStyle = COLORS.transition;
-    ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
+    ctx.fillStyle = COLORS.transition; ctx.fillRect(px, py, DRAW_TILE, DRAW_TILE);
     drawTransitionTexture(x, y);
 }
 
-
-function buildMountainClipPath() {
-    ctx.beginPath();
-    for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-            if (zoneMap[y][x] !== Z.MOUNTAIN) continue;
-            ctx.rect(x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
-        }
-    }
-}
-
-function getMountainBounds() {
-    let minX = COLS, minY = ROWS, maxX = -1, maxY = -1;
-    for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-            if (zoneMap[y][x] !== Z.MOUNTAIN) continue;
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-        }
-    }
-    if (maxX === -1) return null;
-    return {
-        x: minX * DRAW_TILE,
-        y: minY * DRAW_TILE,
-        w: (maxX - minX + 1) * DRAW_TILE,
-        h: (maxY - minY + 1) * DRAW_TILE,
-    };
-}
-
-function drawMountainMass() {
+// --- GÜNCELLENEN DAĞ ÇİZİMİ (SEYREK VE BÜYÜK) ---
+function drawMountainsPerTile() {
     if (!ASSETS.mountain.complete) return;
 
-    const b = getMountainBounds();
-    if (!b) return;
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (zoneMap[y][x] === Z.MOUNTAIN) {
+                // Rastgelelik ekle (Seyreklik)
+                const n = cellNoise(x, y, 9999); 
+                
+                // Sadece %20 ihtimalle dağ çiz (Daha seyrek)
+                // Bu sayede kahverengi zemin de görünür ve dağlar tek tek seçilir
+                if (n < 0.20) {
+                    // DAHA BÜYÜK BOYUT: 2.5 KAT
+                    const scale = 2.5; 
+                    const w = DRAW_TILE * scale;
+                    const h = DRAW_TILE * scale;
 
-    ctx.save();
+                    // Konum Ayarlama: Ortalama ve biraz yukarı
+                    const drawX = (x * DRAW_TILE) - ((w - DRAW_TILE) / 2);
+                    const drawY = (y * DRAW_TILE) - (h - DRAW_TILE) + (DRAW_TILE * 0.2); 
 
-
-    buildMountainClipPath();
-    ctx.clip();
-
-
-    ctx.globalAlpha = 0.92;
-    ctx.imageSmoothingEnabled = false;
-
-
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 6;
-
-
-    const img = ASSETS.mountain;
-    const targetW = b.w * 1.15;
-    const scale = targetW / img.width;
-    const targetH = img.height * scale;
-
-    const dx = b.x + (b.w - targetW) * 0.5;
-    const dy = b.y + (b.h - targetH) * 0.45;
-
-    ctx.drawImage(img, dx, dy, targetW, targetH);
-
-
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 0.35;
-    ctx.drawImage(img, dx + 30, dy - 18, targetW * 0.92, targetH * 0.92);
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
+                    ctx.drawImage(ASSETS.mountain, drawX, drawY, w, h);
+                }
+            }
+        }
+    }
 }
 
-
 function drawRoads() {
-
     if (!villageCenters.length) return;
-
     const nodes = [{ x: 0, y: 0 }, ...villageCenters.map(v => ({ x: v.x, y: v.y }))];
-
     function drawPath(a, b) {
-        ctx.save();
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = "rgba(120, 92, 58, 1)";
-
+        ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = "rgba(120, 92, 58, 1)";
         let x = a.x, y = a.y;
         while (x !== b.x) {
-            ctx.fillRect(
-                x * DRAW_TILE + DRAW_TILE * 0.32,
-                y * DRAW_TILE + DRAW_TILE * 0.32,
-                DRAW_TILE * 0.36,
-                DRAW_TILE * 0.36
-            );
+            ctx.fillRect(x * DRAW_TILE + DRAW_TILE * 0.32, y * DRAW_TILE + DRAW_TILE * 0.32, DRAW_TILE * 0.36, DRAW_TILE * 0.36);
             x += (b.x > x) ? 1 : -1;
         }
         while (y !== b.y) {
-            ctx.fillRect(
-                x * DRAW_TILE + DRAW_TILE * 0.32,
-                y * DRAW_TILE + DRAW_TILE * 0.32,
-                DRAW_TILE * 0.36,
-                DRAW_TILE * 0.36
-            );
+            ctx.fillRect(x * DRAW_TILE + DRAW_TILE * 0.32, y * DRAW_TILE + DRAW_TILE * 0.32, DRAW_TILE * 0.36, DRAW_TILE * 0.36);
             y += (b.y > y) ? 1 : -1;
         }
         ctx.restore();
     }
-
-
-    let nearest = nodes[1];
-    let bestD = 1e9;
-    for (let i = 1; i < nodes.length; i++) {
-        const d = (nodes[i].x) ** 2 + (nodes[i].y) ** 2;
-        if (d < bestD) { bestD = d; nearest = nodes[i]; }
-    }
-    drawPath(nodes[0], nearest);
-
-
     if (nodes.length >= 3) drawPath(nodes[1], nodes[2]);
 }
 
-
 function drawHouses() {
     if (!ASSETS.house.complete) return;
-
-
-    for (const c of villageCenters) {
-        ctx.drawImage(
-            ASSETS.house,
-            c.x * DRAW_TILE,
-            c.y * DRAW_TILE,
-            DRAW_TILE * 2,
-            DRAW_TILE * 2
-        );
-    }
-
-
-    for (const h of smallHouses) {
-        ctx.drawImage(
-            ASSETS.house,
-            h.x * DRAW_TILE,
-            h.y * DRAW_TILE,
-            DRAW_TILE,
-            DRAW_TILE
-        );
-    }
+    for (const c of villageCenters) ctx.drawImage(ASSETS.house, c.x * DRAW_TILE, c.y * DRAW_TILE, DRAW_TILE * 2, DRAW_TILE * 2);
+    for (const h of smallHouses) ctx.drawImage(ASSETS.house, h.x * DRAW_TILE, h.y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
 }
 
 function drawTreesAndDeadTrees() {
@@ -532,70 +501,77 @@ function drawTreesAndDeadTrees() {
         for (let x = 0; x < COLS; x++) {
             if (x <= 5 && y <= 5) continue;
             if (isOccupiedByAnyHouse(x, y)) continue;
-
-            const z = zoneMap[y][x];
-            const n = cellNoise(x, y, 9090);
-
+            const z = zoneMap[y][x]; const n = cellNoise(x, y, 9090);
             if (z === Z.VILLAGE) {
-
-                if (ASSETS.tree.complete && n < 0.20) {
-                    ctx.drawImage(ASSETS.tree, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
-                }
+                if (ASSETS.tree.complete && n < 0.35) ctx.drawImage(ASSETS.tree, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
             }
-
             if (z === Z.DROUGHT) {
+                if (ASSETS.deadTree.complete && n < 0.15) ctx.drawImage(ASSETS.deadTree, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
+            }
+        }
+    }
+}
 
-                if (ASSETS.deadTree.complete && n < 0.08) {
-                    ctx.drawImage(ASSETS.deadTree, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
-                }
+function drawTransitionDecorations() {
+    // Draw Tree2 and Log1 in transition areas with low probability for aesthetic appeal
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (zoneMap[y][x] !== Z.TRANSITION) continue;
+            if (isOccupiedByAnyHouse(x, y)) continue;
+            
+            // Use different seeds for tree2 and log1 to ensure variety
+            const treeNoise = cellNoise(x, y, 7501);
+            const logNoise = cellNoise(x, y, 7502);
+            
+            // Low probability (8% for tree2, 6% for log1) - just a bit, not too much
+            if (ASSETS.tree2.complete && treeNoise < 0.08) {
+                ctx.drawImage(ASSETS.tree2, x * DRAW_TILE, y * DRAW_TILE, DRAW_TILE, DRAW_TILE);
+            } else if (ASSETS.log1.complete && logNoise < 0.06) {
+                // Draw 10.png smaller (70% of tile size) and centered
+                const scale = 0.7;
+                const size = DRAW_TILE * scale;
+                const offset = (DRAW_TILE - size) / 2;
+                ctx.drawImage(ASSETS.log1, x * DRAW_TILE + offset, y * DRAW_TILE + offset, size, size);
             }
         }
     }
 }
 
 function drawVignette() {
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
+    const cx = canvas.width / 2; const cy = canvas.height / 2;
     const grd = ctx.createRadialGradient(cx, cy, 160, cx, cy, 560);
-    grd.addColorStop(0, "rgba(255,255,255,0.00)");
-    grd.addColorStop(1, "rgba(0,0,0,0.12)");
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    grd.addColorStop(0, "rgba(255,255,255,0.00)"); grd.addColorStop(1, "rgba(0,0,0,0.12)");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-// ===================== Render
+// ===================== RENDER & UI =====================
 function renderAll() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // background cells
-    for (let y = 0; y < ROWS; y++)
-        for (let x = 0; x < COLS; x++)
-            drawCellBackground(x, y);
-
-    // roads to reduce "empty" feeling
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) drawCellBackground(x, y);
     drawRoads();
-
-    // mountain overlay (clipped, visible, no spill)
-    drawMountainMass();
-
-    // objects
+    
+    // GÜNCELLENMİŞ DAĞ ÇİZİMİ
+    drawMountainsPerTile();
+    
+    // Draw transition area decorations (Tree2 and Log1)
+    drawTransitionDecorations();
+    
     drawHouses();
     drawTreesAndDeadTrees();
-
-    // subtle grid (optional)
     drawSoftGrid();
-
-    // vignette
     drawVignette();
 
-    // UI + agent
+    // UI Update
     updateAgentUI();
-    positionAgentSprite();
+    
+    // Sprite Position Updates
+    forceMoveSprite();          // Hill Climber
+    forceMoveAnnealingSprite(); // Simulated Annealing
 }
 
 function updateAgentUI() {
-    agentPosEl.textContent = `(${agentX}, ${agentY})`;
-    startAreaEl.textContent = (agentX <= 5 && agentY <= 5) ? "Transition" : zoneName(zoneMap[agentY][agentX]);
+    if(agentPosEl) agentPosEl.textContent = `(${agentX}, ${agentY})`;
+    if(startAreaEl) startAreaEl.textContent = (agentX <= 5 && agentY <= 5) ? "Transition" : zoneName(zoneMap[agentY][agentX]);
 }
 
 function zoneName(z) {
@@ -605,180 +581,180 @@ function zoneName(z) {
     return "Transition";
 }
 
-function positionAgentSprite() {
-    agentSprite.style.left = `${agentX * DRAW_TILE}px`;
-    agentSprite.style.top = `${agentY * DRAW_TILE}px`;
-    agentSprite.style.width = `${DRAW_TILE}px`;
-    agentSprite.style.height = `${DRAW_TILE}px`;
-}
-
-// ===================== Movement (simple for demo)
-function tryMove(dx, dy) {
-    const nx = clamp(agentX + dx, 0, COLS - 1);
-    const ny = clamp(agentY + dy, 0, ROWS - 1);
-
-    // if you want mountains to be blocked, uncomment:
-    // if (zoneMap[ny][nx] === Z.MOUNTAIN) return;
-
-    agentX = nx;
-    agentY = ny;
-    updateAgentUI();
-    positionAgentSprite();
-}
-
-window.addEventListener("keydown", (e) => {
-    const k = e.key.toLowerCase();
-    if (k === "w" || e.key === "ArrowUp") tryMove(0, -1);
-    if (k === "s" || e.key === "ArrowDown") tryMove(0, 1);
-    if (k === "a" || e.key === "ArrowLeft") tryMove(-1, 0);
-    if (k === "d" || e.key === "ArrowRight") tryMove(1, 0);
-});
-
-// ===================== Events
+// Slider Event
 tempSlider.addEventListener("input", () => {
     tempLabel.textContent = tempSlider.value;
-});
-regenBtn.addEventListener("click", () => {
-    generateLayout();
-    renderAll();
+    if(saTempDisplay) saTempDisplay.textContent = tempSlider.value;
 });
 
-// ===================== Init
+// Init
 function waitForAssets(cb) {
     const imgs = Object.values(ASSETS);
     let done = 0;
     const finish = () => { done++; if (done === imgs.length) cb(); };
     imgs.forEach((im) => { im.onload = finish; im.onerror = finish; });
 }
+
 // ==========================================
-// PURE HILL CLIMBING - CONTROLLED AND STOPPABLE MODE
+// CONTROL LOGIC (HILL CLIMBING & SA)
 // ==========================================
 
-let myAgent = null;
-let aiInterval = null;
+// --- VARIABLES ---
+let myAgent = null;         // Hill Climbing Agent Object
+let aiInterval = null;      // Hill Climbing Loop
+let saAgentObj = null;      // Simulated Annealing Agent Object
+let saInterval = null;      // SA Loop
 
-// Select HTML elements
-const startAiBtn = document.getElementById("startAiBtn");
-const statusText = document.getElementById("aiStatusText");
-const spriteImg = document.getElementById("agentSprite"); 
-
-// Function to FORCE and MANUALLY move the sprite
+// --- VISUAL UPDATES ---
 function forceMoveSprite() {
-    const TILE_SIZE = 32; // Map scale (16x2)
-    
-    if (spriteImg) {
-        spriteImg.style.left = (agentX * TILE_SIZE) + "px";
-        spriteImg.style.top = (agentY * TILE_SIZE) + "px";
+    const TILE_SIZE = 32;
+    if (agentSprite) {
+        agentSprite.style.left = (agentX * TILE_SIZE) + "px";
+        agentSprite.style.top = (agentY * TILE_SIZE) + "px";
     }
 }
 
-// Helper function to completely stop AI and loop
-function stopAI() {
-    if (aiInterval) {
-        clearInterval(aiInterval);
-        aiInterval = null;
+function forceMoveAnnealingSprite() {
+    const TILE_SIZE = 32;
+    if (annealingSprite) {
+        annealingSprite.style.left = (annealingAgentX * TILE_SIZE) + "px";
+        annealingSprite.style.top = (annealingAgentY * TILE_SIZE) + "px";
+        annealingSprite.style.width = `${DRAW_TILE}px`;
+        annealingSprite.style.height = `${DRAW_TILE}px`;
     }
 }
 
-function startAI() {
-    // 1. First stop existing loop for a clean start
-    stopAI();
-
-    // 2. Create agent at current (probably 0,0) position
-    myAgent = new CivilizationAgent(agentX, agentY, zoneMap);
-    
-    if(statusText) {
-        statusText.innerText = "Hill Climbing Started...";
-        statusText.style.color = "blue";
-    }
-    
-    console.log("AI Started. TILE_SIZE: 32px.");
-
-    aiInterval = setInterval(() => {
-        // --- LOGIC ---
-        myAgent.update();
-
-        // --- DATA SYNC ---
-        agentX = myAgent.x;
-        agentY = myAgent.y;
-
-        // --- VISUAL ---
-        forceMoveSprite(); 
-        
-        // (Optional) UI update
-        if(typeof updateAgentUI === "function") updateAgentUI();
-
-        // --- INFO ---
-        const score = myAgent.getElevation(agentX, agentY);
-        if(statusText) {
-            statusText.innerHTML = `Position: (${agentX}, ${agentY})<br>Score: ${score}`;
-            statusText.style.color = "#333";
-        }
-
-        // --- END CHECK ---
-        if (myAgent.isStuck) {
-            stopAI(); // Stop loop
-            if(statusText) {
-                statusText.innerHTML = `<strong>LOCAL MAXIMA!</strong><br>Stuck.<br>Score: ${score}`;
-                statusText.style.color = "red";
-            }
-            alert("Agent stuck at Local Maxima!");
-        }
-
-    }, 100); // 100ms speed
+// --- 1. HILL CLIMBING LOGIC ---
+function stopHillClimbing() {
+    if (aiInterval) { clearInterval(aiInterval); aiInterval = null; }
 }
 
-// --- BUTTON CLICK EVENTS ---
-
-// 1. Start Button
 if(startAiBtn) {
-    // Use addEventListener to avoid overwriting existing listeners
     startAiBtn.addEventListener("click", () => {
-        startAI();
+        stopHillClimbing();
+        
+        myAgent = new CivilizationAgent(agentX, agentY, zoneMap);
+        
+        if (statusText) {
+            statusText.innerText = "Hill Climbing Started...";
+            statusText.style.color = "#d9534f"; // Red
+        }
+        
+        // Immediate UI Update
+        forceMoveSprite();
+        if(agentPosEl) agentPosEl.innerText = `(${agentX}, ${agentY})`;
+
+        aiInterval = setInterval(() => {
+            myAgent.update();
+            agentX = myAgent.x;
+            agentY = myAgent.y;
+            
+            forceMoveSprite();
+            if(agentPosEl) agentPosEl.innerText = `(${agentX}, ${agentY})`;
+
+            if (myAgent.isStuck) {
+                stopHillClimbing();
+                if(statusText) statusText.innerText = "HC: Stuck at Local Maxima!";
+                alert("Hill Climber Stuck!");
+            }
+        }, 150);
     });
 }
 
-// 2. Regenerate Button - CRITICAL FIX HERE
+// --- 2. SIMULATED ANNEALING LOGIC ---
+function stopAnnealing() {
+    if (saInterval) { clearInterval(saInterval); saInterval = null; }
+}
+
+if(startSaBtn) {
+    startSaBtn.addEventListener("click", () => {
+        stopAnnealing();
+        
+        let sliderValue = parseInt(tempSlider.value); 
+        
+        saAgentObj = new AnnealingAgent(annealingAgentX, annealingAgentY, zoneMap, sliderValue);
+        
+        if (statusText) {
+            statusText.innerText = "Simulated Annealing Started...";
+            statusText.style.color = "#1f78d1"; // Blue
+        }
+
+        // Immediate UI Update
+        forceMoveAnnealingSprite();
+        if(saPosEl) saPosEl.innerText = `(${annealingAgentX}, ${annealingAgentY})`;
+
+        saInterval = setInterval(() => {
+            saAgentObj.update();
+            let currentTemp = saAgentObj.temperature;
+
+            tempSlider.value = Math.floor(currentTemp);
+            if(tempLabel) tempLabel.textContent = Math.floor(currentTemp);
+            if(saTempDisplay) saTempDisplay.textContent = currentTemp.toFixed(1);
+
+            annealingAgentX = saAgentObj.x;
+            annealingAgentY = saAgentObj.y;
+            
+            forceMoveAnnealingSprite();
+            if(saPosEl) saPosEl.innerText = `(${annealingAgentX}, ${annealingAgentY})`;
+            
+        }, 100); 
+    });
+}
+
+// --- 3. REGENERATE ---
 if(regenBtn) {
-    // Adding an extra task to silence AI when this button is clicked
     regenBtn.addEventListener("click", () => {
-        // A. Kill Loop (Stop agent movement)
-        stopAI();
+        // A. Döngüleri Öldür
+        stopHillClimbing(); // FIX: Replaced stopAI with correct function
+        stopAnnealing();    // FIX: Replaced stopAI with correct function
 
-        // B. Reset Position
-        agentX = 0;
-        agentY = 0;
+        // B. Haritayı yeniden oluştur
+        generateLayout();
+        
+        // C. Konumları RASTGELE SEÇ
+        const hcPos = getSmartStartPos(true);
+        agentX = hcPos.x; agentY = hcPos.y;
+        
+        const saPos = getSmartStartPos(false);
+        annealingAgentX = saPos.x; annealingAgentY = saPos.y;
 
-        // C. Reset Visual (Pull to 0,0 point)
+        // D. Görselleri yeni konuma taşı ve haritayı çiz
         forceMoveSprite();
+        forceMoveAnnealingSprite();
+        renderAll();
 
-        // D. Update Status Text
+        // E. Durum Yazısını Güncelle
         if(statusText) {
-            statusText.innerText = "Map Regenerated. AI Stopped.";
+            statusText.innerText = "Map Regenerated. Agents Ready.";
             statusText.style.color = "green";
         }
+        if(agentPosEl) agentPosEl.innerText = `(${agentX}, ${agentY})`;
+        if(saPosEl) saPosEl.innerText = `(${annealingAgentX}, ${annealingAgentY})`;
         
-        console.log("Regenerate clicked: AI stopped and position reset.");
+        console.log("Regenerate clicked.");
     });
-} else {
-    console.warn("Warning: 'regenBtn' not found, stop feature might not work.");
 }
 
-// Initial Setup on Page Load
+// --- INIT ---
 init = function() {
-    agentX = 0;
-    agentY = 0;
     generateLayout();
+    
+    // Initial positions
+    const hcPos = getSmartStartPos(true);
+    agentX = hcPos.x; agentY = hcPos.y;
+    
+    const saPos = getSmartStartPos(false);
+    annealingAgentX = saPos.x; annealingAgentY = saPos.y;
 
     waitForAssets(() => {
         if (ASSETS.grassTex.complete) grassPattern = makeScaledPattern(ASSETS.grassTex);
         if (ASSETS.droughtTex.complete) droughtPattern = makeScaledPattern(ASSETS.droughtTex);
         renderAll();
         
-        // Set initial position
         forceMoveSprite();
+        forceMoveAnnealingSprite();
+        if(saTempDisplay) saTempDisplay.textContent = tempSlider.value;
     });
 }
 
-// Run Init
 init();

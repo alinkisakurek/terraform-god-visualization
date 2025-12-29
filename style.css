@@ -170,3 +170,10 @@ body {
 .sw-mountain {
     background: #6B4F33;
 }
+
+.sa-agent {
+    /* Rengi 180 derece çevirerek Mavi/Mor tonu verir */
+    filter: hue-rotate(180deg) drop-shadow(0 3px 2px rgba(0, 0, 0, 0.25));
+    opacity: 0.95;
+    z-index: 5;
+}
