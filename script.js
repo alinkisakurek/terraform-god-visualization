@@ -738,36 +738,48 @@ if(startAiBtn) {
     });
 }
 
-// 2. Regenerate Button - CRITICAL FIX HERE
+// 2. Regenerate (Yenile) Butonu
 if(regenBtn) {
-    // Adding an extra task to silence AI when this button is clicked
     regenBtn.addEventListener("click", () => {
-        // A. Kill Loop (Stop agent movement)
+        // A. Döngüyü Öldür
         stopAI();
 
-        // B. Reset Position
-        agentX = 0;
-        agentY = 0;
+        // B. Konumu SIFIRLAMAK YERİNE RASTGELE SEÇ
+        // ESKİSİ: agentX = 0; agentY = 0;
+        
+        // YENİSİ:
+        agentX = randInt(0, COLS - 1);
+        agentY = randInt(0, ROWS - 1);
 
-        // C. Reset Visual (Pull to 0,0 point)
+        // C. Görseli yeni konuma taşı
         forceMoveSprite();
 
-        // D. Update Status Text
+        // Haritayı yeniden oluştur ve çiz
+        generateLayout();
+        renderAll();
+
+        // D. Durum Yazısını Güncelle
         if(statusText) {
-            statusText.innerText = "Map Regenerated. AI Stopped.";
+            statusText.innerText = "Harita ve Konum Yenilendi.";
             statusText.style.color = "green";
         }
         
-        console.log("Regenerate clicked: AI stopped and position reset.");
+        console.log("Regenerate: Yeni rastgele konum atandı.");
     });
 } else {
     console.warn("Warning: 'regenBtn' not found, stop feature might not work.");
 }
 
-// Initial Setup on Page Load
+// Sayfa Yüklendiğinde Başlangıç Ayarı
 init = function() {
-    agentX = 0;
-    agentY = 0;
+    // ESKİSİ:
+    // agentX = 0;
+    // agentY = 0;
+
+    // YENİSİ (Rastgele):
+    agentX = randInt(0, COLS - 1);
+    agentY = randInt(0, ROWS - 1);
+    
     generateLayout();
 
     waitForAssets(() => {
@@ -775,7 +787,7 @@ init = function() {
         if (ASSETS.droughtTex.complete) droughtPattern = makeScaledPattern(ASSETS.droughtTex);
         renderAll();
         
-        // Set initial position
+        // İlk pozisyonu ayarla
         forceMoveSprite();
     });
 }
